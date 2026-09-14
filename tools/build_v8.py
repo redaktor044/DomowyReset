@@ -2,40 +2,53 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-src_path = ROOT / 'theme' / 'domowy-reset-v7.xml'
-out_path = ROOT / 'theme' / 'domowy-reset-v8.xml'
+src_path = ROOT / "theme" / "domowy-reset-v7.xml"
+out_path = ROOT / "theme" / "domowy-reset-v8.xml"
 
-s = src_path.read_text(encoding='utf-8')
-s = s.replace('xmlns:expr="http://www.google.com/1999/xhtml"', 'xmlns:expr="http://www.google.com/2005/gml/expr"')
+s = src_path.read_text(encoding="utf-8")
 
-# Remove the centered masthead copy.
-s = re.sub(r'<div class="mast-center">.*?</div>', '', s, flags=re.S)
+# 1) Blogger namespace must be the GML namespace.
+s = s.replace(
+    'xmlns:expr="http://www.google.com/1999/xhtml"',
+    'xmlns:expr="http://www.google.com/2005/gml/expr"',
+)
 
-# Move primary navigation into the masthead, between brand and actions.
-nav = re.search(r'<nav class="mainnav">.*?</nav>', s, flags=re.S)
-if nav:
-    nav_html = nav.group(0).replace('<nav class="mainnav">', '<nav class="mainnav mast-nav">', 1)
-    s = s[:nav.start()] + s[nav.end():]
-    actions = re.search(r'<div class="mast-actions">.*?</div>', s, flags=re.S)
-    if actions:
-        s = s[:actions.start()] + nav_html + s[actions.start():]
+# 2) Remove the old centered masthead message completely.
+s = re.sub(r'<div class="mast-center">.*?</div>', '', s, count=1, flags=re.S)
 
-# Keep the homepage editorial hierarchy: HERO -> CATEGORIES -> LATEST -> EDITORIAL.
-# The source V7 already has this order; normalize the category block if needed.
+# 3) Move the primary navigation inside the masthead.
+nav_match = re.search(r'<nav class="mainnav">.*?</nav>', s, flags=re.S)
+if nav_match:
+    nav = nav_match.group(0)
+    nav = nav.replace(
+        '<nav class="mainnav">',
+        '<nav class="mainnav mast-nav">',
+        1,
+    )
+    s = s[:nav_match.start()] + s[nav_match.end():]
+    action_match = re.search(r'<div class="mast-actions">.*?</div>', s, flags=re.S)
+    if action_match:
+        s = s[:action_match.start()] + nav + s[action_match.start():]
 
-# Critical Blogger fix: Blog1/sidebar belongs on post/archive pages, not the homepage.
-# On the homepage this block creates a large empty column when there are no posts.
-blog = re.search(r'\s*<section class="blog-area">.*?</section>\s*', s, flags=re.S)
-if blog:
-    blog_html = blog.group(0).strip()
-    wrapped = "\n    <b:if cond='data:blog.pageType != &quot;index&quot;'>\n" + blog_html + "\n    </b:if>\n"
-    s = s[:blog.start()] + wrapped + s[blog.end():]
+# 4) Blog1/sidebar must NOT create an empty homepage column.
+# Wrap the complete blog-area in a non-index Blogger conditional.
+if '<section class="blog-area">' in s:
+    start = s.index('<section class="blog-area">')
+    end = s.index('</section>', start) + len('</section>')
+    block = s[start:end]
+    if 'data:blog.pageType != &quot;index&quot;' not in s[start:end + 120]:
+        wrapped = (
+            '<b:if cond=\'data:blog.pageType != &quot;index&quot;\'>\n'
+            + block
+            + '\n</b:if>'
+        )
+        s = s[:start] + wrapped + s[end:]
 
-# V8 editorial CSS overrides.
+# 5) V8 editorial CSS overrides.
 css = r'''
     .mast-center{display:none!important}
     .masthead{grid-template-columns:auto minmax(0,1fr) auto!important;align-items:end!important;gap:34px!important}
-    .mast-nav{border:0!important;background:transparent!important;min-width:0}
+    .mast-nav{border:0!important;background:transparent!important;min-width:0!important}
     .mast-nav .wrap{width:auto!important;min-height:0!important;justify-content:flex-end!important;gap:24px!important;overflow:visible!important}
     .mast-nav a{padding:8px 0 7px!important;font-size:12px!important}
     .mast-nav a:after{bottom:1px!important}
@@ -52,7 +65,22 @@ css = r'''
       .mast-nav .wrap{gap:18px!important}
     }
 '''
-s = s.replace('</b:skin>', css + '\n  </b:skin>')
 
-out_path.write_text(s, encoding='utf-8')
-print(f'V8 created: {out_path}')
+if '</b:skin>' not in s:
+    raise SystemExit('ERROR: V7 has no Blogger b:skin closing tag')
+s = s.replace('</b:skin>', css + '\n  </b:skin>', 1)
+
+# Hard validation before writing anything.
+checks = {
+    'correct Blogger expr namespace': 'xmlns:expr="http://www.google.com/2005/gml/expr"' in s,
+    'mast-center removed': '<div class="mast-center">' not in s,
+    'mast-nav exists': '<nav class="mainnav mast-nav">' in s,
+    'blog area guarded': "data:blog.pageType != &quot;index&quot;" in s and '<section class="blog-area">' in s,
+}
+failed = [name for name, ok in checks.items() if not ok]
+if failed:
+    raise SystemExit('ERROR: V8 validation failed: ' + ', '.join(failed))
+
+out_path.write_text(s, encoding="utf-8")
+print(f"V8 created: {out_path}")
+print("V8 validation: OK")
