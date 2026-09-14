@@ -11,22 +11,25 @@ s = s.replace('xmlns:expr="http://www.google.com/1999/xhtml"', 'xmlns:expr="http
 # Remove the centered masthead copy.
 s = re.sub(r'<div class="mast-center">.*?</div>', '', s, flags=re.S)
 
-# Move the primary navigation into the masthead, between brand and actions.
+# Move primary navigation into the masthead, between brand and actions.
 nav = re.search(r'<nav class="mainnav">.*?</nav>', s, flags=re.S)
 if nav:
-    nav_html = nav.group(0).replace('<nav class="mainnav">', '<nav class="mainnav mast-nav">')
+    nav_html = nav.group(0).replace('<nav class="mainnav">', '<nav class="mainnav mast-nav">', 1)
     s = s[:nav.start()] + s[nav.end():]
     actions = re.search(r'<div class="mast-actions">.*?</div>', s, flags=re.S)
     if actions:
         s = s[:actions.start()] + nav_html + s[actions.start():]
 
-# Keep homepage editorial sections clean: the live Blog widget/sidebar belongs
-# on article/archive pages, otherwise an empty Blog1 column creates a huge gap.
-blog = re.search(r'<section class="blog-area">.*?</section>', s, flags=re.S)
-if blog and '<b:if cond=' not in blog.group(0):
-    blog_html = blog.group(0)
-    replacement = '<b:if cond=\'data:blog.pageType != &quot;index&quot;\'>\n      ' + blog_html + '\n    </b:if>'
-    s = s[:blog.start()] + replacement + s[blog.end():]
+# Keep the homepage editorial hierarchy: HERO -> CATEGORIES -> LATEST -> EDITORIAL.
+# The source V7 already has this order; normalize the category block if needed.
+
+# Critical Blogger fix: Blog1/sidebar belongs on post/archive pages, not the homepage.
+# On the homepage this block creates a large empty column when there are no posts.
+blog = re.search(r'\s*<section class="blog-area">.*?</section>\s*', s, flags=re.S)
+if blog:
+    blog_html = blog.group(0).strip()
+    wrapped = "\n    <b:if cond='data:blog.pageType != &quot;index&quot;'>\n" + blog_html + "\n    </b:if>\n"
+    s = s[:blog.start()] + wrapped + s[blog.end():]
 
 # V8 editorial CSS overrides.
 css = r'''
