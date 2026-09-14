@@ -7,31 +7,55 @@ out = ROOT / 'preview-v8.html'
 
 s = src.read_text(encoding='utf-8')
 
-# Convert Blogger skin into normal browser CSS.
+# Extract the Blogger skin and render it as ordinary browser CSS.
 m = re.search(r'<b:skin><!\[CDATA\[(.*?)\]\]></b:skin>', s, flags=re.S)
-css = m.group(1) if m else ''
-s = re.sub(r'<b:skin><!\[CDATA\[.*?\]\]></b:skin>', '<style>\n' + css + '\n</style>', s, flags=re.S)
+if not m:
+    raise SystemExit('ERROR: could not find Blogger b:skin in V8')
+css = m.group(1).strip()
 
-# Preview is the homepage, so remove Blogger's non-index-only content.
-s = re.sub(r"\s*<b:if cond='data:blog\.pageType != &quot;index&quot;'>.*?</b:if>\s*", '\n', s, flags=re.S)
+# V8 generator may leave XML-escaped characters in generated override CSS.
+# They must be real CSS punctuation in a normal HTML preview.
+css = css.replace(r'\:', ':').replace(r'\;', ';')
 
-# Unwrap homepage conditional and remove Blogger-only section/widget markup.
-s = re.sub(r"\s*<b:if cond='data:blog\.pageType == &quot;index&quot;'>", '\n', s)
-s = s.replace('</b:if>', '')
-s = re.sub(r'<b:section[^>]*>', '', s)
-s = re.sub(r'</b:section>', '', s)
-s = re.sub(r'<b:widget[^>]*/>', '', s)
+# Extract only the body. This prevents Blogger-only head/XML markup from leaking into preview.
+b = re.search(r'<body>(.*?)</body>', s, flags=re.S)
+if not b:
+    raise SystemExit('ERROR: could not find body in V8')
+body = b.group(1)
 
-# Replace Blogger expressions with static preview values.
-s = s.replace('expr:href="data:blog.homepageUrl"', 'href="/"')
-s = s.replace('<data:blog.pageTitle/>', 'DOMOWY RESET')
-s = re.sub(r'\s+xmlns:[^=]+="[^"]+"', '', s)
-s = re.sub(r'\s+b:[^=]+="[^"]+"', '', s)
-s = re.sub(r'\s+expr:[^=]+="[^"]+"', '', s)
-s = re.sub(r'<data:[^>]+/>', '', s)
+# Preview is always the homepage.
+body = re.sub(r"\s*<b:if cond='data:blog\.pageType != &quot;index&quot;'>.*?</b:if>\s*", '\n', body, flags=re.S)
+body = re.sub(r"\s*<b:if cond='data:blog\.pageType == &quot;index&quot;'>", '\n', body)
+body = body.replace('</b:if>', '')
 
-# Mark this as a local visual preview.
-s = s.replace('</head>', '<style>body:before{content:"V8 PREVIEW";position:fixed;right:18px;bottom:18px;z-index:9999;padding:8px 12px;border-radius:999px;background:#20231e;color:#fffefa;font:700 10px/1 DM Sans,Arial,sans-serif;letter-spacing:.12em}</style></head>')
+# Remove Blogger section/widget wrappers while preserving their inner markup.
+body = re.sub(r'<b:section[^>]*>', '', body)
+body = re.sub(r'</b:section>', '', body)
+body = re.sub(r'<b:widget[^>]*/>', '', body)
 
-out.write_text(s, encoding='utf-8')
+# Replace Blogger expressions/data tags with static preview values.
+body = body.replace('expr:href="data:blog.homepageUrl"', 'href="/"')
+body = re.sub(r'<data:[^>]+/>', '', body)
+
+# Build a clean standalone HTML preview.
+html = '''<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOMOWY RESET — V8 Preview</title>
+<style>
+%s
+/* Preview safety */
+html,body{margin:0;padding:0}
+</style>
+</head>
+<body>
+%s
+<div style="position:fixed;right:18px;bottom:18px;z-index:99999;padding:8px 12px;border-radius:999px;background:#20231e;color:#fffefa;font:700 10px/1 Arial,sans-serif;letter-spacing:.12em">V8 PREVIEW</div>
+</body>
+</html>
+''' % (css, body)
+
+out.write_text(html, encoding='utf-8')
 print(f'Preview created: {out}')
