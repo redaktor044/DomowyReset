@@ -20,14 +20,13 @@ if nav:
     if actions:
         s = s[:actions.start()] + nav_html + s[actions.start():]
 
-# Editorial hierarchy: hero first, categories immediately after it, then article grid.
-cat = re.search(r'<section class="category-row">.*?</section>', s, flags=re.S)
-if cat:
-    cat_html = cat.group(0)
-    s = s[:cat.start()] + s[cat.end():]
-    marker = re.search(r'</section>\s*</div>\s*</b:if>', s, flags=re.S)
-    if marker:
-        s = s[:marker.start()] + '</section>\n        ' + cat_html + '\n      </div>\n    </b:if>' + s[marker.end():]
+# Keep homepage editorial sections clean: the live Blog widget/sidebar belongs
+# on article/archive pages, otherwise an empty Blog1 column creates a huge gap.
+blog = re.search(r'<section class="blog-area">.*?</section>', s, flags=re.S)
+if blog and '<b:if cond=' not in blog.group(0):
+    blog_html = blog.group(0)
+    replacement = '<b:if cond=\'data:blog.pageType != &quot;index&quot;\'>\n      ' + blog_html + '\n    </b:if>'
+    s = s[:blog.start()] + replacement + s[blog.end():]
 
 # V8 editorial CSS overrides.
 css = r'''
